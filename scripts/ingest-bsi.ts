@@ -396,7 +396,7 @@ async function discoverTechnicalGuidelines(): Promise<TrEntry[]> {
 
     const detailUrl = link.href.startsWith("http")
       ? link.href
-      : `${BASE_URL}${link.href}`;
+      : `${BASE_URL}${link.href.startsWith("/") ? "" : "/"}${link.href}`;
 
     entries.push({
       reference: ref,
