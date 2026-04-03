@@ -1,32 +1,37 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "eu.ansvar/german-cybersecurity-mcp",
-  "description": "Query BSI (German Federal Office for Information Security) guidelines, technical reports, security advisories, and IT-Grundschutz frameworks",
+  "description": "BSI (German Federal Office for Information Security) MCP server — guidelines, technical reports, advisories, and IT-Grundschutz frameworks",
   "repository": {
     "url": "https://github.com/Ansvar-Systems/german-cybersecurity-mcp",
     "source": "github"
   },
   "homepage": "https://ansvar.eu",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "keywords": [
-    "bsi",
-    "german-cybersecurity",
-    "it-grundschutz",
     "cybersecurity",
     "germany",
-    "information-security",
+    "regulation",
     "compliance",
-    "mcp",
-    "ansvar"
+    "mcp"
   ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@ansvar/german-cybersecurity-mcp",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "transport": {
         "type": "stdio"
+      }
+    },
+    {
+      "registryType": "npm",
+      "identifier": "@ansvar/german-cybersecurity-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "https://mcp.ansvar.eu/german-cybersecurity/mcp"
       }
     }
   ]
