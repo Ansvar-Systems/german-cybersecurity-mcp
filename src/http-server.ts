@@ -29,7 +29,9 @@ import {
   searchAdvisories,
   getAdvisory,
   listFrameworks,
+  getDataFreshness,
 } from "./db.js";
+import { buildCitation } from "./utils/citation.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -130,6 +132,16 @@ const TOOLS = [
     description: "Return metadata about this MCP server: version, data source, coverage, and tool list.",
     inputSchema: { type: "object" as const, properties: {}, required: [] },
   },
+  {
+    name: "de_cyber_list_sources",
+    description: "List all data sources ingested into this MCP: BSI guidance portal and advisory feed.",
+    inputSchema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "de_cyber_check_data_freshness",
+    description: "Return the most recent document date in the local database for guidance and advisories, indicating how up-to-date the data is.",
+    inputSchema: { type: "object" as const, properties: {}, required: [] },
+  },
 ];
 
 // --- Zod schemas -------------------------------------------------------------
@@ -155,6 +167,23 @@ const SearchAdvisoriesArgs = z.object({
 const GetAdvisoryArgs = z.object({
   reference: z.string().min(1),
 });
+
+// --- Meta helper -------------------------------------------------------------
+
+function buildMeta() {
+  const freshness = getDataFreshness();
+  return {
+    disclaimer:
+      "BSI content reproduced for informational purposes only. Verify current content at the official BSI portal before relying on it for compliance or security decisions.",
+    copyright:
+      "© Bundesamt für Sicherheit in der Informationstechnik (BSI). All rights reserved.",
+    source_url: "https://www.bsi.bund.de/",
+    data_age: {
+      guidance_latest_date: freshness.guidance_latest_date,
+      advisories_latest_date: freshness.advisories_latest_date,
+    },
+  };
+}
 
 // --- MCP server factory ------------------------------------------------------
 
@@ -195,7 +224,7 @@ function createMcpServer(): Server {
             status: parsed.status,
             limit: parsed.limit,
           });
-          return textContent({ results, count: results.length });
+          return textContent({ results, count: results.length, _meta: buildMeta() });
         }
 
         case "de_cyber_get_guidance": {
@@ -204,7 +233,18 @@ function createMcpServer(): Server {
           if (!doc) {
             return errorContent(`Guidance document not found: ${parsed.reference}`);
           }
-          return textContent(doc);
+          const d = doc as Record<string, unknown>;
+          return textContent({
+            ...doc,
+            _citation: buildCitation(
+              String(d.reference ?? parsed.reference),
+              String(d.title ?? d.reference ?? parsed.reference),
+              "de_cyber_get_guidance",
+              { reference: parsed.reference },
+              d.url as string | undefined,
+            ),
+            _meta: buildMeta(),
+          });
         }
 
         case "de_cyber_search_advisories": {
@@ -214,7 +254,7 @@ function createMcpServer(): Server {
             severity: parsed.severity,
             limit: parsed.limit,
           });
-          return textContent({ results, count: results.length });
+          return textContent({ results, count: results.length, _meta: buildMeta() });
         }
 
         case "de_cyber_get_advisory": {
@@ -223,12 +263,23 @@ function createMcpServer(): Server {
           if (!advisory) {
             return errorContent(`Advisory not found: ${parsed.reference}`);
           }
-          return textContent(advisory);
+          const a = advisory as Record<string, unknown>;
+          return textContent({
+            ...advisory,
+            _citation: buildCitation(
+              String(a.reference ?? parsed.reference),
+              String(a.title ?? a.reference ?? parsed.reference),
+              "de_cyber_get_advisory",
+              { reference: parsed.reference },
+              a.url as string | undefined,
+            ),
+            _meta: buildMeta(),
+          });
         }
 
         case "de_cyber_list_frameworks": {
           const frameworks = listFrameworks();
-          return textContent({ frameworks, count: frameworks.length });
+          return textContent({ frameworks, count: frameworks.length, _meta: buildMeta() });
         }
 
         case "de_cyber_about": {
@@ -238,7 +289,47 @@ function createMcpServer(): Server {
             description:
               "BSI (Bundesamt für Sicherheit in der Informationstechnik — German Federal Office for Information Security) MCP server. Provides access to BSI technical guidelines, IT-Grundschutz building blocks, BSI Standards, and security advisories.",
             data_source: "BSI (https://www.bsi.bund.de/)",
+            coverage: {
+              guidance: "BSI Technical Guidelines (TR series), IT-Grundschutz building blocks, BSI Standards (200 series)",
+              advisories: "BSI security advisories and alerts (CB-K series)",
+              frameworks: "IT-Grundschutz Kompendium, BSI TR series, BSI Standards series",
+            },
             tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
+            _meta: buildMeta(),
+          });
+        }
+
+        case "de_cyber_list_sources": {
+          return textContent({
+            sources: [
+              {
+                id: "bsi-guidance",
+                name: "BSI Technical Guidelines and Standards",
+                name_de: "BSI Technische Richtlinien und Standards",
+                url: "https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/",
+                types: ["technical_guideline", "it_grundschutz", "standard", "recommendation"],
+                series: ["TR", "IT-Grundschutz", "BSI-Standard"],
+              },
+              {
+                id: "bsi-advisories",
+                name: "BSI Security Advisories (CB-K series)",
+                name_de: "BSI-Sicherheitshinweise (CB-K-Reihe)",
+                url: "https://www.bsi.bund.de/SiteGlobals/Forms/Suche/BSI/Sicherheitswarnungen/Sicherheitswarnungen_Formular.html",
+                types: ["advisory"],
+                series: ["CB-K"],
+              },
+            ],
+            _meta: buildMeta(),
+          });
+        }
+
+        case "de_cyber_check_data_freshness": {
+          const freshness = getDataFreshness();
+          return textContent({
+            ...freshness,
+            status: "ok",
+            note: "Dates reflect the most recent document date in the local database. Run the ingest script to refresh.",
+            _meta: buildMeta(),
           });
         }
 
