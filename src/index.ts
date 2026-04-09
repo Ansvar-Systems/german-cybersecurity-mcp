@@ -26,6 +26,7 @@ import {
   searchAdvisories,
   getAdvisory,
   listFrameworks,
+  getDataFreshness,
 } from "./db.js";
 import { buildCitation } from "./utils/citation.js";
 
@@ -154,6 +155,24 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: "de_cyber_list_sources",
+    description: "List all data sources ingested into this MCP: BSI guidance portal and advisory feed.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "de_cyber_check_data_freshness",
+    description: "Return the most recent document date in the local database for guidance and advisories, indicating how up-to-date the data is.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // --- Zod schemas for argument validation --------------------------------------
@@ -180,7 +199,22 @@ const GetAdvisoryArgs = z.object({
   reference: z.string().min(1),
 });
 
-// --- Helper ------------------------------------------------------------------
+// --- Helpers -----------------------------------------------------------------
+
+function buildMeta() {
+  const freshness = getDataFreshness();
+  return {
+    disclaimer:
+      "BSI content reproduced for informational purposes only. Verify current content at the official BSI portal before relying on it for compliance or security decisions.",
+    copyright:
+      "© Bundesamt für Sicherheit in der Informationstechnik (BSI). All rights reserved.",
+    source_url: "https://www.bsi.bund.de/",
+    data_age: {
+      guidance_latest_date: freshness.guidance_latest_date,
+      advisories_latest_date: freshness.advisories_latest_date,
+    },
+  };
+}
 
 function textContent(data: unknown) {
   return {
@@ -222,7 +256,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: parsed.status,
           limit: parsed.limit,
         });
-        return textContent({ results, count: results.length });
+        return textContent({ results, count: results.length, _meta: buildMeta() });
       }
 
       case "de_cyber_get_guidance": {
@@ -241,6 +275,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             { reference: parsed.reference },
             d.url as string | undefined,
           ),
+          _meta: buildMeta(),
         });
       }
 
@@ -251,7 +286,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           severity: parsed.severity,
           limit: parsed.limit,
         });
-        return textContent({ results, count: results.length });
+        return textContent({ results, count: results.length, _meta: buildMeta() });
       }
 
       case "de_cyber_get_advisory": {
@@ -270,12 +305,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             { reference: parsed.reference },
             a.url as string | undefined,
           ),
+          _meta: buildMeta(),
         });
       }
 
       case "de_cyber_list_frameworks": {
         const frameworks = listFrameworks();
-        return textContent({ frameworks, count: frameworks.length });
+        return textContent({ frameworks, count: frameworks.length, _meta: buildMeta() });
       }
 
       case "de_cyber_about": {
@@ -291,6 +327,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             frameworks: "IT-Grundschutz Kompendium, BSI TR series, BSI Standards series",
           },
           tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
+          _meta: buildMeta(),
+        });
+      }
+
+      case "de_cyber_list_sources": {
+        return textContent({
+          sources: [
+            {
+              id: "bsi-guidance",
+              name: "BSI Technical Guidelines and Standards",
+              name_de: "BSI Technische Richtlinien und Standards",
+              url: "https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/",
+              types: ["technical_guideline", "it_grundschutz", "standard", "recommendation"],
+              series: ["TR", "IT-Grundschutz", "BSI-Standard"],
+            },
+            {
+              id: "bsi-advisories",
+              name: "BSI Security Advisories (CB-K series)",
+              name_de: "BSI-Sicherheitshinweise (CB-K-Reihe)",
+              url: "https://www.bsi.bund.de/SiteGlobals/Forms/Suche/BSI/Sicherheitswarnungen/Sicherheitswarnungen_Formular.html",
+              types: ["advisory"],
+              series: ["CB-K"],
+            },
+          ],
+          _meta: buildMeta(),
+        });
+      }
+
+      case "de_cyber_check_data_freshness": {
+        const freshness = getDataFreshness();
+        return textContent({
+          ...freshness,
+          status: "ok",
+          note: "Dates reflect the most recent document date in the local database. Run the ingest script to refresh.",
+          _meta: buildMeta(),
         });
       }
 
