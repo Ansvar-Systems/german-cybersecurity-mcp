@@ -4,35 +4,46 @@
 # Build:  docker build -t german-cybersecurity-mcp .
 # Run:    docker run --rm -p 3000:3000 german-cybersecurity-mcp
 #
-# The image expects a pre-built database at /app/data/bsi.db.
-# Override with BSI_DB_PATH for a custom location.
+# The image bakes /app/data/bsi.db at build time. Override path with BSI_DB_PATH.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# --- Stage 1: Build TypeScript ---
-FROM node:20-slim AS builder
+# --- Stage 1: Build TypeScript and native bindings ---
+FROM node:20-alpine AS builder
+
+# python3, make, g++ required for better-sqlite3 native build
+RUN apk add --no-cache python3 make g++ libc6-compat
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+RUN npm ci && npm rebuild better-sqlite3
+
 COPY tsconfig.json ./
 COPY src/ src/
+COPY scripts/ scripts/
 RUN npm run build
 
 # --- Stage 2: Production ---
-FROM node:20-slim AS production
+FROM node:20-alpine AS production
+
+# libstdc++ required at runtime for better-sqlite3 native binding on alpine
+RUN apk add --no-cache libstdc++ libc6-compat
 
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BSI_DB_PATH=/app/data/bsi.db
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Copy node_modules with the rebuilt better-sqlite3 binding from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY package.json ./
 
-COPY --from=builder /app/dist/ dist/
+# Bake DB. CI workflow provisions data/database.db from GitHub Release;
+# repo path is data/bsi.db when building locally.
+COPY data/database.db data/bsi.db
 
 # Non-root user for security
-RUN addgroup --system --gid 1001 mcp && \
-    adduser --system --uid 1001 --ingroup mcp mcp && \
+RUN addgroup -S -g 1001 mcp && \
+    adduser -S -u 1001 -G mcp mcp && \
     chown -R mcp:mcp /app
 USER mcp
 
