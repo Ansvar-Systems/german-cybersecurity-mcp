@@ -124,7 +124,7 @@ jobs:
         run: |
           # Detect DB path from build:db script; fall back to default.
           DB_PATH=$(jq -r '.scripts["build:db"] // empty' package.json | grep -oE 'data/[a-zA-Z0-9_-]+\.db' | head -1)
-          DB_PATH=${DB_PATH:-data/database.db}
+          DB_PATH=${DB_PATH:-data/bsi.db}
           if [ -f "$DB_PATH" ]; then
             # integrity_check is the meaningful correctness check.
             # journal_mode is a deployment-hygiene preference; some MCPs ship WAL mode
@@ -146,7 +146,7 @@ jobs:
             #     it; we don't run that in CI, so an MCP that doesn't commit
             #     a coverage snapshot has nothing to verify against).
             DB_PATH=$(jq -r '.scripts["build:db"] // empty' package.json | grep -oE 'data/[a-zA-Z0-9_-]+\.db' | head -1)
-            DB_PATH=${DB_PATH:-data/database.db}
+            DB_PATH=${DB_PATH:-data/bsi.db}
             if [ -f "$DB_PATH" ] && [ "$(wc -c < "$DB_PATH")" -gt 1024 ] && [ -f coverage.json ]; then
               npm run coverage:verify
             else
