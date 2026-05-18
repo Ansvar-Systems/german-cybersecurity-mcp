@@ -145,7 +145,65 @@ def lint(dockerfile_path: Path, repo_root: Path) -> list[str]:
                     "skips the .node fetch). See spec §3.1.1."
                 )
 
+    cmd_issue = _check_cmd_self_start(runtime_body, repo_root)
+    if cmd_issue is not None:
+        issues.append(cmd_issue)
+
     return issues
+
+
+_CMD_PATH_RE = re.compile(
+    r'CMD\s*\[\s*"node"\s*,\s*"([^"]+\.js)"\s*\]', re.IGNORECASE
+)
+# Top-level patterns that indicate a JS entry self-starts when executed.
+# A file containing ANY of these at column 0 (or after `await`) is treated
+# as a valid entry; otherwise the CMD likely points at a module-only file
+# whose top-level execution is a no-op (the bug class from the 2026-05-14
+# swedish-civil-protection canary, where dist/src/http-server.js exited
+# immediately because its TypeScript source only declared `export async
+# function startHttpServer` with no self-invocation).
+_SELF_START_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^main\s*\(", re.MULTILINE),
+    re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\.catch", re.MULTILINE),
+    re.compile(r"^await\s+[a-zA-Z_]", re.MULTILINE),
+    re.compile(r"^if\s*\(\s*import\.meta\.url", re.MULTILINE),
+    re.compile(r"^startHttpServer\s*\(", re.MULTILINE),
+    re.compile(r"^\.listen\s*\(", re.MULTILINE),
+)
+
+
+def _check_cmd_self_start(runtime_body: str, repo_root: Path) -> str | None:
+    """Verify the CMD entry JS file's TS source has a self-start hook.
+
+    The 2026-05-14 swedish-civil-protection canary shipped with
+    `CMD ["node", "dist/src/http-server.js"]` but its src/http-server.ts
+    only exported `startHttpServer` — no bottom-of-file invocation. Result:
+    container started, node exited 0 immediately, HEALTHCHECK failed
+    forever. The bug would have been caught by this check.
+    """
+    m = _CMD_PATH_RE.search(runtime_body)
+    if m is None:
+        return None  # No `node "..."` CMD — skip (could be CMD-SHELL form etc.)
+    js_path = m.group(1)
+    # Map "dist/src/foo.js" → "src/foo.ts" (the typical tsc -outDir dist pattern).
+    if not js_path.startswith("dist/"):
+        return None  # Non-standard build layout; skip rather than false-positive.
+    rel_ts = js_path[len("dist/"):].rsplit(".js", 1)[0] + ".ts"
+    ts_path = repo_root / rel_ts
+    if not ts_path.exists():
+        return None  # Cannot inspect; skip rather than false-positive.
+    text = ts_path.read_text(errors="replace")
+    if any(p.search(text) for p in _SELF_START_PATTERNS):
+        return None
+    return (
+        f"Dockerfile CMD points at `{js_path}`, but `{rel_ts}` has no "
+        f"top-level self-start hook (no `main()` / `startHttpServer(...)` / "
+        f"`await ...` / `import.meta.url` guard at column 0). Running this "
+        f"JS as a script will exit immediately without binding a port; the "
+        f"HEALTHCHECK will then fail forever. Either add a self-start call "
+        f"to the bottom of {rel_ts}, or change CMD to point at the entry "
+        f"that wires up the server (typically `dist/src/index.js`)."
+    )
 
 
 def main() -> int:

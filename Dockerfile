@@ -1,7 +1,7 @@
 # MCP Server — Hetzner / Kubernetes
 # Image contract: docs/superpowers/specs/2026-04-25-mcp-infrastructure-standard-design.md §3
 # Profile: node-native (better-sqlite3 — native modules built in builder, pruned, copied)
-# DB pattern: none
+# DB pattern: release (data/bsi.db)
 
 FROM node:20-alpine AS builder
 
@@ -31,7 +31,7 @@ RUN addgroup -g 1001 -S nodejs \
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --chown=nodejs:nodejs package.json ./
-# (no DB embedded — premium-mounted or stub MCP)
+COPY --chown=nodejs:nodejs data/bsi.db ./data/bsi.db
 
 # Ensure /app/data exists and is writable by the runtime user.
 # SQLite needs to write -wal/-shm sidecars in the DB directory; even
