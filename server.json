@@ -31,7 +31,7 @@
       "version": "1.0.0",
       "transport": {
         "type": "streamable-http",
-        "url": "https://mcp.ansvar.eu/german-cybersecurity/mcp"
+        "url": "https://gateway.ansvar.eu/mcp"
       }
     }
   ]
